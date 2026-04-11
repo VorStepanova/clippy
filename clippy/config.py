@@ -22,6 +22,8 @@ DEFAULTS: dict[str, Any] = {
         "long_session": "⚠️",
         "happy": "✅",
     },
+    "history_enabled": True,
+    "history_retention_days": None,
 }
 
 

@@ -4,6 +4,7 @@
   const transcript = document.getElementById("transcript");
   const input = document.getElementById("input");
   const sendBtn = document.getElementById("send-btn");
+  const newChatBtn = document.getElementById("new-chat-btn");
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -38,6 +39,23 @@
   function setUiBusy(busy) {
     input.disabled = busy;
     sendBtn.disabled = busy;
+  }
+
+  async function startNewChat() {
+    let api;
+    try {
+      api = await waitForBridge();
+    } catch (_err) {
+      return;
+    }
+    try {
+      await api.new_chat();
+      while (transcript.firstChild) {
+        transcript.removeChild(transcript.firstChild);
+      }
+    } catch (err) {
+      console.error("New chat error:", err);
+    }
   }
 
   // ── Bridge readiness ──────────────────────────────────────────────────────
@@ -108,6 +126,8 @@
       sendMessage();
     }
   });
+
+  newChatBtn.addEventListener("click", startNewChat);
 
   input.focus();
 

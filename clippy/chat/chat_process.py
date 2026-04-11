@@ -173,6 +173,23 @@ class ClippyBridge:
         """
         return _get_response(text)
 
+    def new_chat(self) -> None:
+        """Save current session, reset history, inject handoff into new chat."""
+        from clippy.config import Config
+        config = Config()
+        history_enabled = config.get("history_enabled", True)
+
+        handoff = _client.new_chat(history_enabled=history_enabled)
+
+        def _inject():
+            import time
+            time.sleep(0.3)  # brief pause so transcript clears first
+            if _window_ref is not None:
+                safe = handoff.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+                _window_ref.evaluate_js(f"injectAssistantMessage('{safe}')")
+
+        threading.Thread(target=_inject, daemon=True).start()
+
 
 def main() -> None:
     bridge = ClippyBridge()
@@ -183,6 +200,8 @@ def main() -> None:
         width=380,
         height=600,
         on_top=True,
+        easy_drag=False,
+        text_select=True,
         frameless=False,
     )
     global _window_ref

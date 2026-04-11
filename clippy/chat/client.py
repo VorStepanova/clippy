@@ -7,10 +7,12 @@ so Claude always knows the current time.
 """
 
 import os
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import anthropic
+
+from clippy.chat.history import save_session, build_handoff_message
 
 
 _MODEL = "claude-sonnet-4-6"
@@ -44,6 +46,8 @@ class ClippyClient:
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         self._client = anthropic.Anthropic(api_key=api_key) if api_key else None
         self._history: list[dict[str, Any]] = []
+        self._started_at: str = datetime.now().isoformat(timespec="seconds")
+        self._api_key: str | None = os.environ.get("ANTHROPIC_API_KEY")
 
     def send(self, text: str) -> str:
         """Send a message to Claude and return the response text.
@@ -99,3 +103,21 @@ class ClippyClient:
     def clear_history(self) -> None:
         """Reset the conversation history to an empty state."""
         self._history = []
+
+    def new_chat(
+        self,
+        history_enabled: bool = True,
+    ) -> str:
+        """Save current session, clear history, and return a handoff message.
+
+        Args:
+            history_enabled: Whether to write the session file to disk.
+
+        Returns:
+            The handoff message string to inject into the new session.
+        """
+        handoff = build_handoff_message(self._history, self._api_key)
+        save_session(self._history, self._started_at, history_enabled)
+        self._history = []
+        self._started_at = datetime.now().isoformat(timespec="seconds")
+        return handoff
