@@ -60,8 +60,9 @@ class ClippyClient:
                 "Check your API key in .env."
             )
 
-        now = datetime.now()
-        timestamp = now.strftime("%H:%M, %A %-d %b")
+        from zoneinfo import ZoneInfo
+        now = datetime.now(tz=ZoneInfo("America/New_York"))
+        timestamp = now.strftime("%-I:%M %p, %A %-d %b")
         stamped = f"[{timestamp}] {text}"
 
         self._history.append({"role": "user", "content": stamped})
