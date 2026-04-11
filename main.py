@@ -7,8 +7,9 @@ package internals at interpreter startup more than necessary.
 
 
 def main() -> None:
-    """Start Clippy (stub)."""
-    pass
+    """Start Clippy."""
+    from clippy.app import ClippyApp
+    ClippyApp().run()
 
 
 if __name__ == "__main__":
