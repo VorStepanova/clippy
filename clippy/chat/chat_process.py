@@ -32,6 +32,7 @@ _client = ClippyClient()
 _extractor = Extractor()
 _window_ref = None  # set after webview.create_window(); used by check-in thread
 _INJECT_PATH = os.path.expanduser("~/.clippy_chat_inject.json")
+_FACE_STATE_PATH = os.path.expanduser("~/.clippy_face_state.json")
 
 _INDEX_HTML = os.path.join(_HERE, "ui", "index.html")
 
@@ -154,6 +155,23 @@ def _inject_loop() -> None:
             pass
 
 
+def _face_loop() -> None:
+    _last_face: str = ""
+    while True:
+        time.sleep(5)
+        if not os.path.exists(_FACE_STATE_PATH):
+            continue
+        try:
+            with open(_FACE_STATE_PATH) as f:
+                data = json.load(f)
+            emoji = data.get("face", "😊")
+            if emoji != _last_face and _window_ref is not None:
+                _window_ref.evaluate_js(f"updateHeaderFace('{emoji}')")
+                _last_face = emoji
+        except Exception:
+            pass
+
+
 class ClippyBridge:
     """Exposes Python methods to the JS running in the webview.
 
@@ -210,6 +228,8 @@ def main() -> None:
     _checkin_thread.start()
     _inject_thread = threading.Thread(target=_inject_loop, daemon=True, name="clippy-inject")
     _inject_thread.start()
+    _face_thread = threading.Thread(target=_face_loop, daemon=True, name="clippy-face")
+    _face_thread.start()
     webview.start()
 
 

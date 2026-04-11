@@ -134,4 +134,9 @@
   window.injectAssistantMessage = function (text) {
     appendBubble(text, "assistant");
   };
+
+  window.updateHeaderFace = function (emoji) {
+    const el = document.getElementById("header-face");
+    if (el) el.textContent = emoji;
+  };
 })();

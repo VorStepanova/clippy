@@ -23,6 +23,7 @@ html, body {
   border-bottom: 1px solid #2a2a2a;
   flex-shrink: 0;
   -webkit-app-region: drag;
+  position: relative;
 }
 
 .header-icon {
@@ -185,4 +186,15 @@ body {
 
 .new-chat-btn:hover {
   background: #25a244;
+}
+
+.header-face {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 18px;
+  line-height: 1;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  transition: opacity 0.2s;
 }

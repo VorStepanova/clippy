@@ -44,6 +44,7 @@ class ClippyApp(rumps.App):
         """
         self.title = self._face.current_icon()
         self._write_monitor_snapshot()
+        self._push_chat_face()
 
     def _write_monitor_snapshot(self) -> None:
         snapshot = {
@@ -58,6 +59,17 @@ class ClippyApp(rumps.App):
                 json.dump(snapshot, f, indent=2)
         except Exception:
             pass  # never let a write failure crash the main thread
+
+    def _push_chat_face(self) -> None:
+        """Write the current chat face emoji to ~/.clippy_face_state.json."""
+        try:
+            emoji = self._face.current_chat_face()
+            path = os.path.expanduser("~/.clippy_face_state.json")
+            with open(path, "w") as f:
+                import json
+                json.dump({"face": emoji}, f)
+        except Exception:
+            pass
 
     @rumps.clicked("💬 Open Chat")
     def _open_chat(self, _) -> None:

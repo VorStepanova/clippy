@@ -23,11 +23,11 @@ _MODEL = "claude-haiku-4-5"
 _MAX_TOKENS = 512
 
 _HANDOFF_SYSTEM = (
-    "You are summarizing a Clippy accountability chat session for handoff to "
-    "a new session. Write 2-3 sentences maximum. Be warm and direct. Focus "
-    "only on what matters for continuity: what the user was working on, any "
-    "decisions made, anything left unresolved. Do not mention reminders or "
-    "wins/losses — those are handled separately. No preamble."
+    "Write a 2-3 sentence summary of this chat session for handoff. "
+    "Output ONLY the summary sentences — no preamble, no explanation, "
+    "no meta-commentary about your role. Just the sentences. "
+    "Focus on: what the user was working on, decisions made, anything "
+    "unresolved. Do not mention reminders or wins/losses."
 )
 
 
@@ -91,10 +91,18 @@ def _format_pending_reminders(pending: list[dict]) -> str:
     lines = []
     for r in pending:
         label = r.get("label", "Reminder")
-        next_fire = r.get("next_fire_at") or r.get("due_at", "?")
+        raw_time = r.get("next_fire_at") or r.get("due_at")
+        if raw_time:
+            try:
+                dt = datetime.fromisoformat(raw_time)
+                time_str = dt.strftime("%-I:%M %p")
+            except ValueError:
+                time_str = raw_time
+        else:
+            time_str = "?"
         snooze = r.get("snooze_count", 0)
         snooze_str = f" (snoozed {snooze}x)" if snooze else ""
-        lines.append(f"⏰ {label} — next up {next_fire}{snooze_str}")
+        lines.append(f"⏰ {label} — next up {time_str}{snooze_str}")
     return "\n".join(lines)
 
 

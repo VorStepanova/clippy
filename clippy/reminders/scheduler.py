@@ -16,7 +16,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
-import rumps
+import subprocess
 
 from clippy.reminders.state import resolve_pending
 from clippy.reminders.escalator import escalate
@@ -25,6 +25,21 @@ INJECT_PATH = os.path.expanduser("~/.clippy_chat_inject.json")
 COMPLETIONS_PATH = os.path.expanduser("~/.clippy_completions.json")
 PENDING_PATH = os.path.expanduser("~/.clippy_pending_reminders.json")
 _POLL_INTERVAL = 60  # seconds
+
+
+def _notify(label: str, message: str) -> None:
+    """Send a macOS notification via osascript — safe from any thread."""
+    safe_label = label.replace('"', "'")
+    safe_message = message.replace('"', "'")
+    script = (
+        f'display notification "{safe_message}" '
+        f'with title "⏰ Clippy Reminder" '
+        f'subtitle "{safe_label}"'
+    )
+    try:
+        subprocess.Popen(["osascript", "-e", script])
+    except Exception:
+        pass
 
 
 def _write_inject(message: str) -> None:
@@ -117,11 +132,7 @@ def _check_and_fire() -> None:
             continue
 
         if due_at <= now:
-            rumps.notification(
-                title="⏰ Clippy Reminder",
-                subtitle=label,
-                message=reminder.get("raw", ""),
-            )
+            _notify(label, reminder.get("raw", ""))
             _write_inject(f"⏰ Your reminder fired: {label}. How'd it go?")
 
             acknowledged = escalate(reminder)

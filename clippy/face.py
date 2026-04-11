@@ -7,6 +7,8 @@ layer above the leaf modules.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from clippy.config import Config
 from clippy.monitor import Monitor
 
@@ -42,3 +44,91 @@ class Face:
             return faces.get("long_session", "⚠️")
 
         return faces.get("default", "📎")
+
+    def current_chat_face(self) -> str:
+        """Return an expressive emoji for the chat window header.
+
+        Priority order (highest to lowest):
+        1. snooze_count >= 3 on any pending reminder → 😡
+        2. Win logged in last 30 min → 🥳
+        3. Multiple wins today (>= 3) → 😎
+        4. Idle > 30 min → 😴
+        5. Idle > 5 min → 🤔
+        6. Same app > 2 hrs → 😤
+        7. Any pending reminder with snooze_count >= 1 → 😬
+        8. Late night (after 11pm) → 🌙
+        9. Default → 😊
+        """
+        import json
+        import os
+        from datetime import timedelta
+
+        now = datetime.now()
+
+        # Load pending reminders
+        pending: list[dict] = []
+        pending_path = os.path.expanduser("~/.clippy_pending_reminders.json")
+        try:
+            if os.path.exists(pending_path):
+                with open(pending_path) as f:
+                    pending = json.load(f)
+        except Exception:
+            pass
+
+        # Load completions
+        completions: list[dict] = []
+        completions_path = os.path.expanduser("~/.clippy_completions.json")
+        try:
+            if os.path.exists(completions_path):
+                with open(completions_path) as f:
+                    completions = json.load(f)
+        except Exception:
+            pass
+
+        # Priority 1 — any reminder snoozed 3+ times
+        if any(r.get("snooze_count", 0) >= 3 for r in pending):
+            return "😡"
+
+        # Priority 2 — win in last 30 min
+        cutoff_30 = now - timedelta(minutes=30)
+        recent_wins = [
+            c for c in completions
+            if datetime.fromisoformat(
+                c.get("completed_at", "1970-01-01")
+            ) >= cutoff_30
+        ]
+        if recent_wins:
+            return "🥳"
+
+        # Priority 3 — 3+ wins today
+        cutoff_today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        wins_today = [
+            c for c in completions
+            if datetime.fromisoformat(
+                c.get("completed_at", "1970-01-01")
+            ) >= cutoff_today
+        ]
+        if len(wins_today) >= 3:
+            return "😎"
+
+        # Priority 4 — idle > 30 min
+        if self._monitor.idle_duration() >= 1800:
+            return "😴"
+
+        # Priority 5 — idle > 5 min
+        if self._monitor.idle_duration() >= 300:
+            return "🤔"
+
+        # Priority 6 — same app > 2 hrs
+        if self._monitor.current_app_duration() >= 7200:
+            return "😤"
+
+        # Priority 7 — any snoozed reminder
+        if any(r.get("snooze_count", 0) >= 1 for r in pending):
+            return "😬"
+
+        # Priority 8 — late night
+        if now.hour >= 23:
+            return "🌙"
+
+        return "😊"
