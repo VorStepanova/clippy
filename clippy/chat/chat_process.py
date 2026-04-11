@@ -21,23 +21,15 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 
 import webview  # noqa: E402
+from clippy.chat.client import ClippyClient  # noqa: E402
+
+_client = ClippyClient()
 
 _INDEX_HTML = os.path.join(_HERE, "ui", "index.html")
 
 
 def _get_response(text: str) -> str:
-    """Return a reply for the given user message.
-
-    Stub for now — Phase 4 will replace this body with a call to
-    clippy.chat.client so the seam is already in place.
-
-    Args:
-        text: The raw message the user typed.
-
-    Returns:
-        A reply string to display in the chat UI.
-    """
-    return f"I heard you: {text}"
+    return _client.send(text)
 
 
 class ClippyBridge:

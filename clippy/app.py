@@ -21,7 +21,7 @@ class ClippyApp(rumps.App):
     """
 
     def __init__(self) -> None:
-        super().__init__("📎", quit_button="Quit")
+        super().__init__("📎", quit_button=None)
         self._config = Config()
         self._monitor = Monitor()
         self._monitor.start()
@@ -29,7 +29,7 @@ class ClippyApp(rumps.App):
         self._tick_timer = rumps.Timer(self._tick, 5)
         self._tick_timer.start()
         self._chat_window = ChatWindow()
-        self.menu = ["💬 Open Chat"]
+        self.menu = ["💬 Open Chat", "Quit"]
 
     def _tick(self, _sender: rumps.Timer) -> None:
         """Timer callback — fires every 5 seconds on the main thread.
@@ -41,3 +41,9 @@ class ClippyApp(rumps.App):
     @rumps.clicked("💬 Open Chat")
     def _open_chat(self, _) -> None:
         self._chat_window.open()
+
+    @rumps.clicked("Quit")
+    def _quit(self, _) -> None:
+        """Terminate the chat subprocess cleanly before quitting."""
+        self._chat_window.close()
+        rumps.quit_application()

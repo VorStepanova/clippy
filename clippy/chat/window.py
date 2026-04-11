@@ -15,6 +15,7 @@ from typing import Optional
 
 
 _CHAT_PROCESS = os.path.join(os.path.dirname(__file__), "chat_process.py")
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
 
 class ChatWindow:
@@ -38,8 +39,13 @@ class ChatWindow:
         if self.is_open():
             return
 
+        env = os.environ.copy()
+        env["PYTHONPATH"] = _PROJECT_ROOT
+
         self._process = subprocess.Popen(
             [sys.executable, _CHAT_PROCESS],
+            cwd=_PROJECT_ROOT,
+            env=env,
         )
 
     def is_open(self) -> bool:
@@ -49,3 +55,9 @@ class ChatWindow:
             True if the subprocess exists and has not yet exited.
         """
         return self._process is not None and self._process.poll() is None
+
+    def close(self) -> None:
+        """Terminate the chat window subprocess if it is running."""
+        if self.is_open():
+            self._process.terminate()
+            self._process = None
