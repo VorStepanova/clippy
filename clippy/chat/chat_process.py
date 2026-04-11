@@ -9,8 +9,12 @@ Do NOT import this module from app.py or any other clippy module. It is
 an entry point only; subprocess.Popen is the only caller.
 """
 
+import json
 import os
 import sys
+import threading
+import time
+from datetime import datetime, timedelta
 
 # Resolve the project root (three levels up: chat_process.py → chat/ → clippy/ → project root)
 _HERE = os.path.dirname(os.path.abspath(__file__))
@@ -26,6 +30,7 @@ from clippy.chat.extractor import Extractor  # noqa: E402
 
 _client = ClippyClient()
 _extractor = Extractor()
+_window_ref = None  # set after webview.create_window(); used by check-in thread
 
 _INDEX_HTML = os.path.join(_HERE, "ui", "index.html")
 
@@ -74,9 +79,61 @@ def _save_completions(completions: list) -> None:
                 existing = json.load(f)
         except Exception:
             pass
-    existing.extend(completions)
+    from datetime import datetime
+    timestamped = [
+        {"task": task, "completed_at": datetime.now().isoformat()}
+        for task in completions
+    ]
+    existing.extend(timestamped)
     with open(path, "w") as f:
         json.dump(existing, f, indent=2)
+
+
+_IDLE_THRESHOLD_SECS = 1800       # 30 minutes
+_APP_DWELL_THRESHOLD_SECS = 7200  # 2 hours
+_POLL_INTERVAL_SECS = 900         # 15 minutes
+_COOLDOWN_SECS = 3600             # 1 hour per trigger
+
+_last_fired: dict[str, datetime] = {}
+
+
+def _read_monitor_snapshot() -> dict | None:
+    path = os.path.expanduser("~/.clippy_monitor_state.json")
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return None
+
+
+def _cooldown_ok(key: str) -> bool:
+    last = _last_fired.get(key)
+    return last is None or datetime.now() - last > timedelta(seconds=_COOLDOWN_SECS)
+
+
+def _fire(message: str, key: str) -> None:
+    global _window_ref
+    _last_fired[key] = datetime.now()
+    if _window_ref is not None:
+        safe = message.replace("\\", "\\\\").replace("'", "\\'")
+        _window_ref.evaluate_js(f"injectAssistantMessage('{safe}')")
+
+
+def _checkin_loop() -> None:
+    while True:
+        time.sleep(_POLL_INTERVAL_SECS)
+        snap = _read_monitor_snapshot()
+        if not snap:
+            continue
+
+        idle = snap.get("idle_secs", 0)
+        duration = snap.get("app_duration_secs", 0)
+        app = snap.get("active_app", "that app")
+
+        if idle >= _IDLE_THRESHOLD_SECS and _cooldown_ok("idle"):
+            _fire("Hey, you've gone quiet — everything okay? 👀", "idle")
+        elif duration >= _APP_DWELL_THRESHOLD_SECS and _cooldown_ok("dwell"):
+            _fire(f"You've been in {app} for over 2 hours. Still on track? 🤔", "dwell")
 
 
 class ClippyBridge:
@@ -101,7 +158,7 @@ class ClippyBridge:
 
 def main() -> None:
     bridge = ClippyBridge()
-    webview.create_window(
+    window = webview.create_window(
         title="Clippy",
         url=f"file://{_INDEX_HTML}",
         js_api=bridge,
@@ -110,6 +167,10 @@ def main() -> None:
         on_top=True,
         frameless=False,
     )
+    global _window_ref
+    _window_ref = window
+    _checkin_thread = threading.Thread(target=_checkin_loop, daemon=True, name="clippy-checkin")
+    _checkin_thread.start()
     webview.start()
 
 

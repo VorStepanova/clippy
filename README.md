@@ -1,6 +1,6 @@
 # Clippy
 
-A personal AI-powered accountability companion that lives in your macOS menu bar.
+A personal judgy AI-powered accountability companion that lives in your macOS menu bar.
 
 Clippy is a solo project built to solve a specific problem: I needed something 
 that could hear me, not just remind me. Scheduled reminders don't know that 

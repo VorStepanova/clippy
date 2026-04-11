@@ -5,6 +5,10 @@ every other module. It is the single place where observations (from monitor,
 reminders, chat) get turned into UI decisions.
 """
 
+import json
+import os
+from datetime import datetime
+
 import rumps
 
 from clippy.config import Config
@@ -37,6 +41,21 @@ class ClippyApp(rumps.App):
         Updates the menu bar icon based on current monitor state and config.
         """
         self.title = self._face.current_icon()
+        self._write_monitor_snapshot()
+
+    def _write_monitor_snapshot(self) -> None:
+        snapshot = {
+            "active_app": self._monitor.current_app(),
+            "app_duration_secs": self._monitor.current_app_duration(),
+            "idle_secs": self._monitor.idle_duration(),
+            "sampled_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        path = os.path.expanduser("~/.clippy_monitor_state.json")
+        try:
+            with open(path, "w") as f:
+                json.dump(snapshot, f, indent=2)
+        except Exception:
+            pass  # never let a write failure crash the main thread
 
     @rumps.clicked("💬 Open Chat")
     def _open_chat(self, _) -> None:

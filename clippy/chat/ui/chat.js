@@ -110,4 +110,8 @@
   });
 
   input.focus();
+
+  window.injectAssistantMessage = function (text) {
+    appendBubble(text, "assistant");
+  };
 })();
