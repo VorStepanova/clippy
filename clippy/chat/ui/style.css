@@ -85,6 +85,7 @@ body {
   line-height: 1.45;
   word-break: break-word;
   white-space: pre-wrap;
+  user-select: text;
 }
 
 .bubble-row.user .bubble {
