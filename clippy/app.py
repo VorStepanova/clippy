@@ -35,7 +35,22 @@ class ClippyApp(rumps.App):
         self._tick_timer.start()
         self._chat_window = ChatWindow()
         scheduler.start()
-        self.menu = ["💬 Open Chat", "Quit"]
+        self._history_item = rumps.MenuItem(
+            self._history_label(),
+            callback=self._toggle_history
+        )
+        self._retention_item = rumps.MenuItem(
+            self._retention_label(),
+            callback=self._toggle_retention
+        )
+        self.menu = [
+            "💬 Open Chat",
+            rumps.separator,
+            self._history_item,
+            self._retention_item,
+            rumps.separator,
+            "Quit",
+        ]
 
     def _tick(self, _sender: rumps.Timer) -> None:
         """Timer callback — fires every 5 seconds on the main thread.
@@ -70,6 +85,33 @@ class ClippyApp(rumps.App):
                 json.dump({"face": emoji}, f)
         except Exception:
             pass
+
+    def _history_label(self) -> str:
+        enabled = self._config.get("history_enabled", True)
+        check = "✓ " if enabled else "   "
+        return f"{check}Save chat history"
+
+    def _retention_label(self) -> str:
+        days = self._config.get("history_retention_days", None)
+        if days is None:
+            return "   History: unlimited"
+        return f"   History: {days} days"
+
+    def _toggle_history(self, _) -> None:
+        enabled = self._config.get("history_enabled", True)
+        self._config.set("history_enabled", not enabled)
+        self._history_item.title = self._history_label()
+
+    def _toggle_retention(self, _) -> None:
+        days = self._config.get("history_retention_days", None)
+        # Cycle: unlimited → 30 days → 7 days → unlimited
+        if days is None:
+            self._config.set("history_retention_days", 30)
+        elif days == 30:
+            self._config.set("history_retention_days", 7)
+        else:
+            self._config.set("history_retention_days", None)
+        self._retention_item.title = self._retention_label()
 
     @rumps.clicked("💬 Open Chat")
     def _open_chat(self, _) -> None:

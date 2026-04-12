@@ -27,6 +27,7 @@ load_dotenv(os.path.join(_PROJECT_ROOT, ".env"))
 import webview  # noqa: E402
 from clippy.chat.client import ClippyClient  # noqa: E402
 from clippy.chat.extractor import Extractor  # noqa: E402
+from clippy.reminders import streak  # noqa: E402
 
 _client = ClippyClient()
 _extractor = Extractor()
@@ -230,6 +231,7 @@ def main() -> None:
     _inject_thread.start()
     _face_thread = threading.Thread(target=_face_loop, daemon=True, name="clippy-face")
     _face_thread.start()
+    streak.start()
     webview.start()
 
 
