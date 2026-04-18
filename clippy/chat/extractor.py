@@ -68,7 +68,10 @@ class Extractor:
                 system=_REMINDER_SYSTEM,
                 messages=[{"role": "user", "content": user_text}],
             )
-            data: dict[str, Any] = json.loads(response.content[0].text)
+            raw = response.content[0].text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            data: dict[str, Any] = json.loads(raw)
             return data.get("reminders", [])
         except Exception:
             return []
@@ -106,7 +109,10 @@ class Extractor:
                 system=_COMPLETION_SYSTEM,
                 messages=[{"role": "user", "content": prompt}],
             )
-            data: dict[str, Any] = json.loads(response.content[0].text)
+            raw = response.content[0].text.strip()
+            if raw.startswith("```"):
+                raw = raw.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+            data: dict[str, Any] = json.loads(raw)
             ai_completed: list[str] = data.get("completed", [])
             for task in ai_completed:
                 if task not in completed:

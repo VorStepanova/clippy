@@ -41,6 +41,11 @@
     sendBtn.disabled = busy;
   }
 
+  function autoResize() {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 120) + "px";
+  }
+
   async function startNewChat() {
     let api;
     try {
@@ -89,6 +94,7 @@
     if (!text) return;
 
     input.value = "";
+    input.style.height = "auto";
     appendBubble(text, "user");
     setUiBusy(true);
 
@@ -120,6 +126,8 @@
 
   sendBtn.addEventListener("click", sendMessage);
 
+  input.addEventListener("input", autoResize);
+
   input.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -131,8 +139,107 @@
 
   input.focus();
 
-  window.injectAssistantMessage = function (text) {
-    appendBubble(text, "assistant");
+  window.injectAssistantMessage = function (payload) {
+    let text, buttons = [];
+    try {
+      const parsed = JSON.parse(payload);
+      text = parsed.message || payload;
+      buttons = parsed.buttons || [];
+    } catch (_) {
+      text = payload;
+    }
+
+    const row = document.createElement("div");
+    row.className = "bubble-row assistant";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = text;
+
+    // Reminder action buttons
+    if (text.startsWith("⏰")) {
+      const match = text.match(/^⏰\s+([^—–]+?)\s*[—–]/);
+      const label = match ? match[1].trim() : "";
+      const btnRow = document.createElement("div");
+      btnRow.className = "action-btn-row";
+
+      function disableRow() {
+        btnRow.querySelectorAll("button").forEach(b => b.disabled = true);
+      }
+
+      const doneBtn = document.createElement("button");
+      doneBtn.className = "ack-btn";
+      doneBtn.textContent = "✓ Done";
+      doneBtn.addEventListener("click", async function () {
+        disableRow();
+        doneBtn.textContent = "✓";
+        try {
+          const api = await waitForBridge();
+          await api.acknowledge_reminder(label);
+        } catch (e) {
+          console.error("Ack error:", e);
+        }
+      });
+
+      const notTodayBtn = document.createElement("button");
+      notTodayBtn.className = "action-btn";
+      notTodayBtn.textContent = "Not today";
+      notTodayBtn.addEventListener("click", async function () {
+        disableRow();
+        notTodayBtn.textContent = "dismissed";
+        try {
+          const api = await waitForBridge();
+          await api.dismiss_reminder(label);
+        } catch (e) {
+          console.error("Dismiss error:", e);
+        }
+      });
+
+      const snoozeBtn = document.createElement("button");
+      snoozeBtn.className = "action-btn";
+      snoozeBtn.textContent = "Snooze 1h";
+      snoozeBtn.addEventListener("click", async function () {
+        disableRow();
+        snoozeBtn.textContent = "snoozed";
+        try {
+          const api = await waitForBridge();
+          await api.snooze_reminder(label, 1);
+        } catch (e) {
+          console.error("Snooze error:", e);
+        }
+      });
+
+      btnRow.appendChild(doneBtn);
+      btnRow.appendChild(notTodayBtn);
+      btnRow.appendChild(snoozeBtn);
+      bubble.appendChild(btnRow);
+    }
+
+    // Action buttons (e.g. Full / Lazy)
+    if (buttons.length > 0) {
+      const btnRow = document.createElement("div");
+      btnRow.className = "action-btn-row";
+      buttons.forEach(function (btnDef) {
+        const btn = document.createElement("button");
+        btn.className = "action-btn";
+        btn.textContent = btnDef.label;
+        btn.addEventListener("click", async function () {
+          btnRow.querySelectorAll(".action-btn").forEach(b => b.disabled = true);
+          try {
+            const api = await waitForBridge();
+            await api.handle_action(btnDef.action);
+          } catch (e) {
+            console.error("Action error:", e);
+          }
+        });
+        btnRow.appendChild(btn);
+      });
+      bubble.appendChild(btnRow);
+    }
+
+    row.appendChild(bubble);
+    transcript.appendChild(row);
+    transcript.scrollTop = transcript.scrollHeight;
   };
 
   window.updateHeaderFace = function (emoji) {

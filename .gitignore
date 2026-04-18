@@ -9,4 +9,5 @@ dist/
 
 docs/
 
-reminders/default_config.json
+reminders/*.json
+!reminders/*.json.example

@@ -12,18 +12,27 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import threading
 import time
 from datetime import datetime, timedelta
 
 import subprocess
 
-from clippy.reminders.state import resolve_pending
+import anthropic
+
+from clippy.reminders.state import (
+    PENDING_PATH,
+    log_fired,
+    remove_fired,
+    resolve_pending,
+)
 from clippy.reminders.escalator import escalate
 
-INJECT_PATH = os.path.expanduser("~/.clippy_chat_inject.json")
-COMPLETIONS_PATH = os.path.expanduser("~/.clippy_completions.json")
-PENDING_PATH = os.path.expanduser("~/.clippy_pending_reminders.json")
+INJECT_QUEUE_PATH = os.path.expanduser("~/.clippy_inject_queue.json")
+_MONITOR_STATE_PATH = os.path.expanduser("~/.clippy_monitor_state.json")
+_ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+_NUDGE_MODEL = "claude-haiku-4-5"
 _POLL_INTERVAL = 60  # seconds
 
 
@@ -42,50 +51,38 @@ def _notify(label: str, message: str) -> None:
         pass
 
 
-def _write_inject(message: str) -> None:
-    try:
-        with open(INJECT_PATH, "w") as f:
-            json.dump({
-                "message": message,
-                "written_at": datetime.now().isoformat(timespec="seconds"),
-            }, f, indent=2)
-    except Exception:
-        pass
+def _generate_id() -> str:
+    return secrets.token_hex(4)
 
 
-def _log_fired(label: str) -> None:
-    existing: list[dict] = []
-    if os.path.exists(COMPLETIONS_PATH):
+def _enqueue_inject(message: str) -> None:
+    """Append a message to the inject queue. Never overwrites existing items."""
+    now = datetime.now()
+    cutoff = now - timedelta(hours=24)
+    queue: list[dict] = []
+    if os.path.exists(INJECT_QUEUE_PATH):
         try:
-            with open(COMPLETIONS_PATH) as f:
-                existing = json.load(f)
+            with open(INJECT_QUEUE_PATH) as f:
+                queue = json.load(f)
         except Exception:
-            pass
-    existing.append({
-        "task": label,
-        "completed_at": datetime.now().isoformat(timespec="seconds"),
-        "source": "reminder",
+            queue = []
+    # Purge delivered items older than 24 hours
+    queue = [
+        item for item in queue
+        if item.get("delivered_at") is None
+        or datetime.fromisoformat(item["delivered_at"]) >= cutoff
+    ]
+    queue.append({
+        "id": _generate_id(),
+        "message": message,
+        "written_at": now.isoformat(timespec="seconds"),
+        "delivered_at": None,
     })
+    tmp = INJECT_QUEUE_PATH + ".tmp"
     try:
-        with open(COMPLETIONS_PATH, "w") as f:
-            json.dump(existing, f, indent=2)
-    except Exception:
-        pass
-
-
-def _remove_fired(label: str, due_at: str) -> None:
-    """Remove one fired reminder from the pending file by (label, due_at)."""
-    if not os.path.exists(PENDING_PATH):
-        return
-    try:
-        with open(PENDING_PATH) as f:
-            reminders = json.load(f)
-        reminders = [
-            r for r in reminders
-            if not (r.get("label") == label and r.get("due_at") == due_at)
-        ]
-        with open(PENDING_PATH, "w") as f:
-            json.dump(reminders, f, indent=2)
+        with open(tmp, "w") as f:
+            json.dump(queue, f, indent=2)
+        os.replace(tmp, INJECT_QUEUE_PATH)
     except Exception:
         pass
 
@@ -110,7 +107,73 @@ def _snooze_reminder(label: str, due_at: str) -> None:
         pass
 
 
+def _defer_next_fire_only(label: str, due_at: str) -> None:
+    """Set next_fire_at 30 min from now without changing snooze_count."""
+    if not os.path.exists(PENDING_PATH):
+        return
+    try:
+        with open(PENDING_PATH) as f:
+            reminders = json.load(f)
+        for r in reminders:
+            if r.get("label") == label and r.get("due_at") == due_at:
+                r["next_fire_at"] = (
+                    datetime.now() + timedelta(minutes=30)
+                ).isoformat(timespec="seconds")
+                break
+        with open(PENDING_PATH, "w") as f:
+            json.dump(reminders, f, indent=2)
+    except Exception:
+        pass
+
+
+def _read_idle_secs() -> int:
+    """Seconds idle from monitor snapshot; 0 if missing or unreadable."""
+    if not os.path.exists(_MONITOR_STATE_PATH):
+        return 0
+    try:
+        with open(_MONITOR_STATE_PATH) as f:
+            snap = json.load(f)
+        return int(snap.get("idle_secs", 0))
+    except Exception:
+        return 0
+
+
+def _generate_nudge(label: str, context: str) -> str:
+    """Generate a fresh in-character nudge message using Haiku.
+
+    Falls back to a plain label-based message on any error.
+    """
+    if not _ANTHROPIC_API_KEY or not context:
+        return f"⏰ {label} — time to check in."
+    try:
+        client = anthropic.Anthropic(api_key=_ANTHROPIC_API_KEY)
+        response = client.messages.create(
+            model=_NUDGE_MODEL,
+            max_tokens=80,
+            system=(
+                "You are Clippy, a warm but direct personal accountability "
+                "companion. Write ONE short sentence (max 12 words) nudging "
+                "the user about their reminder. Use the context provided to "
+                "make it personal and specific. Be warm but a little cheeky. "
+                "No preamble. No emoji unless it fits naturally."
+            ),
+            messages=[{
+                "role": "user",
+                "content": f"Reminder: {label}\nContext: {context}"
+            }],
+        )
+        return f"⏰ {label} — {response.content[0].text.strip()}"
+    except Exception:
+        return f"⏰ {label} — time to check in."
+
+
 def _check_and_fire() -> None:
+    idle_secs = _read_idle_secs()
+    if idle_secs >= 3600:
+        return
+
+    escalation_frozen = idle_secs >= 1800
+
     now = datetime.now()
     pending = resolve_pending()
     for reminder in pending:
@@ -131,17 +194,44 @@ def _check_and_fire() -> None:
         except ValueError:
             continue
 
+        stale_cutoff = now - timedelta(minutes=60)
+        next_fire_dt: datetime | None = None
+        if next_fire_str:
+            try:
+                next_fire_dt = datetime.fromisoformat(next_fire_str)
+            except ValueError:
+                pass
+
+        if next_fire_dt is not None:
+            if next_fire_dt < stale_cutoff:
+                remove_fired(label, due_at_str)
+                continue
+        elif due_at < stale_cutoff:
+            remove_fired(label, due_at_str)
+            continue
+
         if due_at <= now:
-            _notify(label, reminder.get("raw", ""))
-            _write_inject(f"⏰ Your reminder fired: {label}. How'd it go?")
-
-            acknowledged = escalate(reminder)
-
-            if acknowledged:
-                _log_fired(label)
-                _remove_fired(label, due_at_str)
+            if reminder.get("source") == "config":
+                context = reminder.get("raw", "")
+                nudge = _generate_nudge(label, context)
             else:
-                _snooze_reminder(label, due_at_str)
+                nudge = f"⏰ {label} — How'd it go?"
+            snooze_count = reminder.get("snooze_count", 0)
+            if snooze_count > 0:
+                nudge += f"\n(snoozed {snooze_count}× — getting impatient)"
+            _notify(label, nudge)
+            _enqueue_inject(nudge)
+
+            if escalation_frozen:
+                _defer_next_fire_only(label, due_at_str)
+            else:
+                acknowledged = escalate(reminder)
+
+                if acknowledged:
+                    log_fired(label)
+                    remove_fired(label, due_at_str)
+                else:
+                    _snooze_reminder(label, due_at_str)
 
 
 def _scheduler_loop() -> None:

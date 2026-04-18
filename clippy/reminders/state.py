@@ -12,6 +12,8 @@ import os
 from datetime import datetime, timedelta
 
 PENDING_PATH = os.path.expanduser("~/.clippy_pending_reminders.json")
+COMPLETIONS_PATH = os.path.expanduser("~/.clippy_completions.json")
+DISMISSED_PATH = os.path.expanduser("~/.clippy_dismissed_today.json")
 
 
 def _load_raw() -> list[dict]:
@@ -22,6 +24,49 @@ def _load_raw() -> list[dict]:
             return json.load(f)
     except Exception:
         return []
+
+
+def load_pending() -> list[dict]:
+    """Read ~/.clippy_pending_reminders.json without resolving or rewriting."""
+    return _load_raw()
+
+
+def log_fired(label: str) -> None:
+    """Append a reminder completion to ~/.clippy_completions.json."""
+    existing: list[dict] = []
+    if os.path.exists(COMPLETIONS_PATH):
+        try:
+            with open(COMPLETIONS_PATH) as f:
+                existing = json.load(f)
+        except Exception:
+            pass
+    existing.append({
+        "task": label,
+        "completed_at": datetime.now().isoformat(timespec="seconds"),
+        "source": "reminder",
+    })
+    try:
+        with open(COMPLETIONS_PATH, "w") as f:
+            json.dump(existing, f, indent=2)
+    except Exception:
+        pass
+
+
+def remove_fired(label: str, due_at: str) -> None:
+    """Remove one reminder from the pending file by (label, due_at)."""
+    if not os.path.exists(PENDING_PATH):
+        return
+    try:
+        with open(PENDING_PATH) as f:
+            reminders = json.load(f)
+        reminders = [
+            r for r in reminders
+            if not (r.get("label") == label and r.get("due_at") == due_at)
+        ]
+        with open(PENDING_PATH, "w") as f:
+            json.dump(reminders, f, indent=2)
+    except Exception:
+        pass
 
 
 def _save(reminders: list[dict]) -> None:
@@ -62,6 +107,69 @@ def _deduplicate(reminders: list[dict]) -> list[dict]:
             seen.add(key)
             out.append(r)
     return out
+
+
+def dismiss_today(label: str) -> None:
+    """Mark a reminder label as dismissed for today. Removes all pending entries."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    dismissed: dict[str, str] = {}
+    if os.path.exists(DISMISSED_PATH):
+        try:
+            with open(DISMISSED_PATH) as f:
+                dismissed = json.load(f)
+        except Exception:
+            pass
+    dismissed[label] = today
+    try:
+        with open(DISMISSED_PATH, "w") as f:
+            json.dump(dismissed, f, indent=2)
+    except Exception:
+        pass
+    remove_all_for_label(label)
+
+
+def is_dismissed_today(label: str) -> bool:
+    """Check if a label was dismissed today."""
+    if not os.path.exists(DISMISSED_PATH):
+        return False
+    try:
+        with open(DISMISSED_PATH) as f:
+            dismissed = json.load(f)
+        today = datetime.now().strftime("%Y-%m-%d")
+        return dismissed.get(label) == today
+    except Exception:
+        return False
+
+
+def remove_all_for_label(label: str) -> None:
+    """Remove all pending reminders matching a label."""
+    if not os.path.exists(PENDING_PATH):
+        return
+    try:
+        with open(PENDING_PATH) as f:
+            reminders = json.load(f)
+        reminders = [r for r in reminders if r.get("label") != label]
+        with open(PENDING_PATH, "w") as f:
+            json.dump(reminders, f, indent=2)
+    except Exception:
+        pass
+
+
+def snooze_for_hours(label: str, hours: int) -> None:
+    """Snooze all pending reminders for a label by N hours."""
+    if not os.path.exists(PENDING_PATH):
+        return
+    try:
+        with open(PENDING_PATH) as f:
+            reminders = json.load(f)
+        target = (datetime.now() + timedelta(hours=hours)).isoformat(timespec="seconds")
+        for r in reminders:
+            if r.get("label") == label:
+                r["next_fire_at"] = target
+        with open(PENDING_PATH, "w") as f:
+            json.dump(reminders, f, indent=2)
+    except Exception:
+        pass
 
 
 def resolve_pending() -> list[dict]:

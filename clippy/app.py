@@ -16,6 +16,12 @@ from clippy.face import Face
 from clippy.monitor import Monitor
 from clippy.chat.window import ChatWindow
 from clippy.reminders import scheduler
+from clippy.reminders import config_scheduler
+from clippy.reminders import skincare_scheduler
+from clippy.reminders.state import (
+    load_pending, log_fired, remove_fired, remove_all_for_label,
+    dismiss_today, snooze_for_hours,
+)
 
 
 class ClippyApp(rumps.App):
@@ -35,6 +41,8 @@ class ClippyApp(rumps.App):
         self._tick_timer.start()
         self._chat_window = ChatWindow()
         scheduler.start()
+        config_scheduler.start()
+        skincare_scheduler.start()
         self._history_item = rumps.MenuItem(
             self._history_label(),
             callback=self._toggle_history
@@ -51,6 +59,78 @@ class ClippyApp(rumps.App):
             rumps.separator,
             "Quit",
         ]
+        self._pending_menu_keys: list[str] = []
+        self._sync_pending_menu()
+
+    def _pending_rows_deduped(self) -> list[dict]:
+        """One row per label — the earliest valid due_at wins."""
+        seen: dict[str, dict] = {}
+        for r in load_pending():
+            if not isinstance(r, dict):
+                continue
+            due = r.get("due_at")
+            if not due or not isinstance(due, str):
+                continue
+            try:
+                datetime.fromisoformat(due)
+            except (ValueError, TypeError):
+                continue
+            label = r.get("label", "Reminder")
+            if label not in seen or due < seen[label].get("due_at", ""):
+                seen[label] = r
+        rows = list(seen.values())
+        rows.sort(key=lambda x: x.get("due_at", ""))
+        return rows
+
+    def _sync_pending_menu(self) -> None:
+        """Rebuild Pending section above Quit from ~/.clippy_pending_reminders.json."""
+        for key in self._pending_menu_keys:
+            try:
+                del self.menu[key]
+            except KeyError:
+                pass
+        self._pending_menu_keys.clear()
+
+        rows = self._pending_rows_deduped()
+        if not rows:
+            return
+
+        to_insert: list[rumps.MenuItem] = []
+        for r in rows:
+            label = r.get("label", "Reminder")
+            due_at = r.get("due_at", "")
+            emoji = r.get("emoji", "")
+            title = f"{emoji} {label}".strip()
+
+            parent = rumps.MenuItem(title)
+
+            def _done_cb(_sender, lb=label) -> None:
+                log_fired(lb)
+                remove_all_for_label(lb)
+                self._sync_pending_menu()
+
+            def _not_today_cb(_sender, lb=label) -> None:
+                dismiss_today(lb)
+                self._sync_pending_menu()
+
+            def _snooze_cb(_sender, lb=label, hrs=1) -> None:
+                snooze_for_hours(lb, hrs)
+                self._sync_pending_menu()
+
+            def _snooze_3h_cb(_sender, lb=label) -> None:
+                snooze_for_hours(lb, 3)
+                self._sync_pending_menu()
+
+            parent["✓ Done"] = rumps.MenuItem("✓ Done", callback=_done_cb)
+            parent["Not today"] = rumps.MenuItem("Not today", callback=_not_today_cb)
+            parent["Snooze 1h"] = rumps.MenuItem("Snooze 1h", callback=_snooze_cb)
+            parent["Snooze 3h"] = rumps.MenuItem("Snooze 3h", callback=_snooze_3h_cb)
+
+            to_insert.append(parent)
+
+        for item in reversed(to_insert):
+            self.menu.insert_before("Quit", item)
+            self._pending_menu_keys.append(item.title)
 
     def _tick(self, _sender: rumps.Timer) -> None:
         """Timer callback — fires every 5 seconds on the main thread.
@@ -60,6 +140,7 @@ class ClippyApp(rumps.App):
         self.title = self._face.current_icon()
         self._write_monitor_snapshot()
         self._push_chat_face()
+        self._sync_pending_menu()
 
     def _write_monitor_snapshot(self) -> None:
         snapshot = {

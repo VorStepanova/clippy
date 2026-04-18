@@ -24,7 +24,23 @@ DEFAULTS: dict[str, Any] = {
     },
     "history_enabled": True,
     "history_retention_days": None,
+    "demo": False,
 }
+
+
+def is_demo() -> bool:
+    """Check if demo mode is active via config file or CLIPPY_DEMO env var."""
+    import os
+    if os.environ.get("CLIPPY_DEMO", "").strip() in ("1", "true", "yes"):
+        return True
+    if CONFIG_PATH.exists():
+        try:
+            with CONFIG_PATH.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return bool(data.get("demo", False))
+        except Exception:
+            pass
+    return False
 
 
 class Config:

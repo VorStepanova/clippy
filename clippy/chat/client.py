@@ -13,6 +13,7 @@ from typing import Any
 import anthropic
 
 from clippy.chat.history import save_session, build_handoff_message
+from clippy.config import is_demo
 
 
 _MODEL = "claude-sonnet-4-6"
@@ -28,6 +29,22 @@ _SYSTEM_PROMPT = (
     "acknowledge it warmly and let them know the app has noted it and will "
     "notify them at the right time. You don't fire the notification yourself "
     "— the app does. Do not suggest Siri or other apps."
+)
+
+_DEMO_SYSTEM_PROMPT = (
+    "You are Clippy, a personal accountability companion living in the user's "
+    "macOS menu bar. You are warm, direct, and a little opinionated. You help "
+    "the user stay on track, think through problems, and remember things. Keep "
+    "replies concise — this is a chat window, not an essay. You always know "
+    "what time it is because every message includes a timestamp. "
+    "You are part of a larger macOS app that handles reminders separately. "
+    "When a user asks you to remember something or set a reminder, "
+    "acknowledge it warmly and let them know the app has noted it and will "
+    "notify them at the right time. You don't fire the notification yourself "
+    "— the app does. Do not suggest Siri or other apps. "
+    "This is a demo session — keep responses natural and friendly. "
+    "Do not mention anything overly personal or private. Treat the user "
+    "as someone showcasing the app to others."
 )
 
 
@@ -80,7 +97,7 @@ class ClippyClient:
             response = self._client.messages.create(
                 model=_MODEL,
                 max_tokens=_MAX_TOKENS,
-                system=_SYSTEM_PROMPT,
+                system=_DEMO_SYSTEM_PROMPT if is_demo() else _SYSTEM_PROMPT,
                 messages=self._history,
             )
             reply = response.content[0].text
@@ -103,6 +120,17 @@ class ClippyClient:
     def clear_history(self) -> None:
         """Reset the conversation history to an empty state."""
         self._history = []
+
+    def inject_assistant(self, text: str) -> None:
+        """Add an assistant message to history without an API call.
+
+        Used when the scheduler injects a nudge bubble into the chat UI —
+        this ensures Claude's next response has context for what was just said.
+
+        Args:
+            text: The message that was injected into the UI as an assistant bubble.
+        """
+        self._history.append({"role": "assistant", "content": text})
 
     def new_chat(
         self,

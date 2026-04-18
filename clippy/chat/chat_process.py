@@ -32,7 +32,7 @@ from clippy.reminders import streak  # noqa: E402
 _client = ClippyClient()
 _extractor = Extractor()
 _window_ref = None  # set after webview.create_window(); used by check-in thread
-_INJECT_PATH = os.path.expanduser("~/.clippy_chat_inject.json")
+_INJECT_QUEUE_PATH = os.path.expanduser("~/.clippy_inject_queue.json")
 _FACE_STATE_PATH = os.path.expanduser("~/.clippy_face_state.json")
 
 _INDEX_HTML = os.path.join(_HERE, "ui", "index.html")
@@ -124,6 +124,10 @@ def _fire(message: str, key: str) -> None:
 
 def _checkin_loop() -> None:
     while True:
+        now_hour = datetime.now().hour
+        if 0 <= now_hour < 7:
+            time.sleep(_POLL_INTERVAL_SECS)
+            continue
         time.sleep(_POLL_INTERVAL_SECS)
         snap = _read_monitor_snapshot()
         if not snap:
@@ -139,19 +143,58 @@ def _checkin_loop() -> None:
             _fire(f"You've been in {app} for over 2 hours. Still on track? 🤔", "dwell")
 
 
+def _save_queue(queue: list[dict]) -> None:
+    """Write the queue back to disk atomically."""
+    tmp = _INJECT_QUEUE_PATH + ".tmp"
+    try:
+        with open(tmp, "w") as f:
+            json.dump(queue, f, indent=2)
+        os.replace(tmp, _INJECT_QUEUE_PATH)
+    except Exception:
+        pass
+
+
+def _deliver_pending(queue: list[dict]) -> list[dict]:
+    """Attempt delivery of all undelivered queue items.
+
+    Only delivers if _window_ref is set. Stamps delivered_at on success.
+    Leaves undelivered items untouched for retry on next tick.
+    """
+    if _window_ref is None:
+        return queue
+    now = datetime.now().isoformat(timespec="seconds")
+    for item in queue:
+        if item.get("delivered_at") is not None:
+            continue
+        message = item.get("message", "")
+        if not message:
+            item["delivered_at"] = now
+            continue
+        try:
+            _client.inject_assistant(message)
+            buttons = item.get("buttons", [])
+            if buttons:
+                payload = json.dumps({"message": message, "buttons": buttons})
+            else:
+                payload = message
+            safe = payload.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n")
+            _window_ref.evaluate_js(f"injectAssistantMessage('{safe}')")
+            item["delivered_at"] = now
+        except Exception:
+            pass  # leave undelivered, retry next tick
+    return queue
+
+
 def _inject_loop() -> None:
     while True:
         time.sleep(10)
-        if not os.path.exists(_INJECT_PATH):
+        if not os.path.exists(_INJECT_QUEUE_PATH):
             continue
         try:
-            with open(_INJECT_PATH) as f:
-                data = json.load(f)
-            message = data.get("message", "")
-            if message and _window_ref is not None:
-                os.remove(_INJECT_PATH)
-                safe = message.replace("\\", "\\\\").replace("'", "\\'")
-                _window_ref.evaluate_js(f"injectAssistantMessage('{safe}')")
+            with open(_INJECT_QUEUE_PATH) as f:
+                queue = json.load(f)
+            queue = _deliver_pending(queue)
+            _save_queue(queue)
         except Exception:
             pass
 
@@ -209,6 +252,66 @@ class ClippyBridge:
 
         threading.Thread(target=_inject, daemon=True).start()
 
+    def acknowledge_reminder(self, label: str) -> None:
+        """Remove a reminder by label and log it as completed.
+
+        Called when the user clicks the ✓ Done button on an injected
+        reminder bubble.
+
+        Args:
+            label: The reminder label extracted from the bubble text.
+        """
+        import json
+        from datetime import datetime
+
+        pending_path = os.path.expanduser("~/.clippy_pending_reminders.json")
+        completions_path = os.path.expanduser("~/.clippy_completions.json")
+
+        # Remove all pending reminders matching this label
+        try:
+            if os.path.exists(pending_path):
+                with open(pending_path) as f:
+                    reminders = json.load(f)
+                reminders = [r for r in reminders if r.get("label") != label]
+                with open(pending_path, "w") as f:
+                    json.dump(reminders, f, indent=2)
+        except Exception:
+            pass
+
+        # Log as completed
+        try:
+            existing = []
+            if os.path.exists(completions_path):
+                with open(completions_path) as f:
+                    existing = json.load(f)
+            existing.append({
+                "task": label,
+                "completed_at": datetime.now().isoformat(timespec="seconds"),
+                "source": "ack_button",
+            })
+            with open(completions_path, "w") as f:
+                json.dump(existing, f, indent=2)
+        except Exception:
+            pass
+
+    def dismiss_reminder(self, label: str) -> None:
+        """Dismiss a reminder for today — stops all further nudges."""
+        from clippy.reminders.state import dismiss_today
+        dismiss_today(label)
+
+    def snooze_reminder(self, label: str, hours: int) -> None:
+        """Snooze a reminder for N hours."""
+        from clippy.reminders.state import snooze_for_hours
+        snooze_for_hours(label, hours)
+
+    def handle_action(self, action: str) -> None:
+        """Handle a button action from an injected bubble."""
+        from clippy.reminders.skincare_scheduler import get_action_response
+        from clippy.reminders.scheduler import _enqueue_inject
+        response = get_action_response(action)
+        if response:
+            _enqueue_inject(response)
+
 
 def main() -> None:
     bridge = ClippyBridge()
@@ -218,7 +321,7 @@ def main() -> None:
         js_api=bridge,
         width=380,
         height=600,
-        on_top=True,
+        on_top=False,
         easy_drag=False,
         text_select=True,
         frameless=False,
