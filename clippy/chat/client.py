@@ -66,7 +66,7 @@ class ClippyClient:
         self._started_at: str = datetime.now().isoformat(timespec="seconds")
         self._api_key: str | None = os.environ.get("ANTHROPIC_API_KEY")
 
-    def send(self, text: str) -> str:
+    def send(self, text: str, agenda: list[dict] | None = None) -> str:
         """Send a message to Claude and return the response text.
 
         Prepends the current timestamp to the user message before sending,
@@ -76,6 +76,8 @@ class ClippyClient:
 
         Args:
             text: The raw message the user typed in the chat UI.
+            agenda: Optional list of pending reminder dicts to include
+                    in the system prompt so Claude is agenda-aware.
 
         Returns:
             The assistant's reply, or an error string if the call fails.
@@ -93,11 +95,27 @@ class ClippyClient:
 
         self._history.append({"role": "user", "content": stamped})
 
+        base_prompt = _DEMO_SYSTEM_PROMPT if is_demo() else _SYSTEM_PROMPT
+        system = base_prompt
+        if agenda:
+            lines = ["\n\nToday's pending reminders (you are aware of these):"]
+            for item in agenda:
+                emoji = item.get("emoji", "")
+                label = item.get("label", "")
+                due = item.get("due_at", "")
+                try:
+                    from datetime import datetime as dt
+                    due_fmt = dt.fromisoformat(due).strftime("%-I:%M %p")
+                except Exception:
+                    due_fmt = due
+                lines.append(f"  - {emoji} {label} at {due_fmt}")
+            system = base_prompt + "\n".join(lines)
+
         try:
             response = self._client.messages.create(
                 model=_MODEL,
                 max_tokens=_MAX_TOKENS,
-                system=_DEMO_SYSTEM_PROMPT if is_demo() else _SYSTEM_PROMPT,
+                system=system,
                 messages=self._history,
             )
             reply = response.content[0].text

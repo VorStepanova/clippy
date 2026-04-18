@@ -7,6 +7,7 @@ reminders, chat) get turned into UI decisions.
 
 import json
 import os
+import sys
 from datetime import datetime
 
 import rumps
@@ -57,6 +58,7 @@ class ClippyApp(rumps.App):
             self._history_item,
             self._retention_item,
             rumps.separator,
+            "🔄 Restart",
             "Quit",
         ]
         self._pending_menu_keys: list[str] = []
@@ -197,6 +199,20 @@ class ClippyApp(rumps.App):
     @rumps.clicked("💬 Open Chat")
     def _open_chat(self, _) -> None:
         self._chat_window.open()
+
+    @rumps.clicked("🔄 Restart")
+    def _restart(self, _) -> None:
+        """Spawn a fresh Clippy process, then quit this one."""
+        self._chat_window.close()
+        import subprocess
+        env = os.environ.copy()
+        subprocess.Popen(
+            [sys.executable] + sys.argv,
+            cwd=os.getcwd(),
+            env=env,
+            start_new_session=True,
+        )
+        rumps.quit_application()
 
     @rumps.clicked("Quit")
     def _quit(self, _) -> None:

@@ -38,8 +38,44 @@ _FACE_STATE_PATH = os.path.expanduser("~/.clippy_face_state.json")
 _INDEX_HTML = os.path.join(_HERE, "ui", "index.html")
 
 
+_AGENDA_KEYWORDS = [
+    "agenda", "adgenda", "schedule", "what's on", "whats on", "what is on",
+    "what do i have", "what's left", "whats left", "what is left",
+    "to do", "todo", "my day", "my plate",
+    "what's up", "whats up", "what is up",
+    "reminders", "what should i", "what am i doing",
+    "what's happening", "whats happening", "what is happening",
+    "plan for today", "today's plan", "todays plan",
+    "what's today", "whats today",
+]
+
+
+def _is_agenda_query(text: str) -> bool:
+    lower = text.lower()
+    return any(kw in lower for kw in _AGENDA_KEYWORDS)
+
+
+def _load_agenda_items() -> list[dict]:
+    """Load pending reminders deduped by label (earliest due_at wins)."""
+    from clippy.reminders.state import load_pending
+    seen: dict[str, dict] = {}
+    for r in load_pending():
+        label = r.get("label", "")
+        due = r.get("due_at", "")
+        if not label or not due:
+            continue
+        if label not in seen or due < seen[label].get("due_at", ""):
+            seen[label] = r
+    items = list(seen.values())
+    items.sort(key=lambda x: x.get("due_at", ""))
+    return items
+
+
 def _get_response(text: str) -> str:
-    response = _client.send(text)
+    agenda_items = _load_agenda_items()
+    show_buttons = _is_agenda_query(text)
+
+    response = _client.send(text, agenda=agenda_items if agenda_items else None)
 
     reminders = _extractor.extract_reminders(text)
     if reminders:
@@ -51,6 +87,16 @@ def _get_response(text: str) -> str:
     completions = _extractor.extract_completions(text, known_tasks)
     if completions:
         _save_completions(completions)
+
+    if show_buttons and agenda_items:
+        payload = {
+            "message": response,
+            "agenda": [
+                {"label": it.get("label", ""), "emoji": it.get("emoji", "")}
+                for it in agenda_items
+            ],
+        }
+        return json.dumps(payload)
 
     return response
 
@@ -296,11 +342,17 @@ class ClippyBridge:
 
     def dismiss_reminder(self, label: str) -> None:
         """Dismiss a reminder for today — stops all further nudges."""
+        from clippy.config import is_demo
+        if is_demo():
+            return
         from clippy.reminders.state import dismiss_today
         dismiss_today(label)
 
     def snooze_reminder(self, label: str, hours: int) -> None:
         """Snooze a reminder for N hours."""
+        from clippy.config import is_demo
+        if is_demo():
+            return
         from clippy.reminders.state import snooze_for_hours
         snooze_for_hours(label, hours)
 

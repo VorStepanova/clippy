@@ -220,12 +220,25 @@ body {
   transition: opacity 0.2s;
 }
 
+.header-clock {
+  position: absolute;
+  right: 52px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  user-select: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  letter-spacing: 0.02em;
+}
+
 .ack-btn {
   -webkit-appearance: none;
   appearance: none;
-  display: block;
-  margin-top: 8px;
-  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px 12px;
+  flex-shrink: 0;
   border-radius: 10px;
   border: none;
   background: rgba(255, 255, 255, 0.15);
@@ -260,7 +273,8 @@ body {
 .action-btn {
   -webkit-appearance: none;
   appearance: none;
-  padding: 4px 12px;
+  padding: 5px 12px;
+  flex-shrink: 0;
   border-radius: 10px;
   border: none;
   background: rgba(255, 255, 255, 0.15);
@@ -283,4 +297,53 @@ body {
 .action-btn:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+/* ── Button selection states ── */
+.btn-faded {
+  opacity: 0.25 !important;
+}
+
+.btn-selected {
+  opacity: 1 !important;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.btn-done {
+  background: #30d158 !important;
+  color: #fff !important;
+}
+
+.agenda-label {
+  margin-top: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ffffff;
+}
+
+/* ── Markdown in bubbles ── */
+.bubble strong {
+  font-weight: 600;
+}
+
+.bubble em {
+  font-style: italic;
+}
+
+.bubble code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: "SF Mono", Menlo, monospace;
+  font-size: 0.9em;
+}
+
+.bubble ul {
+  margin: 4px 0;
+  padding-left: 18px;
+  list-style: disc;
+}
+
+.bubble li {
+  margin: 2px 0;
 }

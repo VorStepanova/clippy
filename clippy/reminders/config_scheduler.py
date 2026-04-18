@@ -60,10 +60,23 @@ def _save_pending(reminders: list[dict]) -> None:
         pass
 
 
+def _purge_foreign_labels(tasks: list[dict]) -> None:
+    """Remove pending config-sourced reminders whose labels aren't in the active config."""
+    valid_names = {t.get("name", "") for t in tasks}
+    existing = _load_pending()
+    cleaned = [
+        r for r in existing
+        if r.get("source") != "config" or r.get("label") in valid_names
+    ]
+    if len(cleaned) != len(existing):
+        _save_pending(cleaned)
+
+
 def _queue_todays_reminders() -> None:
     now = datetime.now()
     today = _DAY_MAP[now.weekday()]
     tasks = _load_config()
+    _purge_foreign_labels(tasks)
     existing = _load_pending()
 
     existing_labels = {r.get("label") for r in existing}
