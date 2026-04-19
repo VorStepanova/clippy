@@ -22,7 +22,9 @@
     // Bullet lines: - text or * text at start of line
     escaped = escaped.replace(/^[\-\*]\s+(.+)$/gm, "<li>$1</li>");
     escaped = escaped.replace(/((?:<li>.*<\/li>\n?)+)/g, "<ul>$1</ul>");
-    // Line breaks
+    // Collapse blank lines so paragraph breaks render as single line breaks,
+    // not double-height gaps.
+    escaped = escaped.replace(/\n{2,}/g, "\n");
     escaped = escaped.replace(/\n/g, "<br>");
     return escaped;
   }

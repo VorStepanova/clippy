@@ -58,6 +58,16 @@ def sync_mode_marker(current_demo: bool) -> bool:
     return cleared
 
 
+def _label_eq(a: str, b: str) -> bool:
+    """Case- and whitespace-insensitive label comparison.
+
+    Used everywhere a reminder label is matched so ``Curate Local`` and
+    ``curate local`` are treated as the same task — otherwise one can get
+    acknowledged while its case-variant keeps firing.
+    """
+    return (a or "").strip().lower() == (b or "").strip().lower()
+
+
 def _load_raw() -> list[dict]:
     if not os.path.exists(PENDING_PATH):
         return []
@@ -103,7 +113,7 @@ def remove_fired(label: str, due_at: str) -> None:
             reminders = json.load(f)
         reminders = [
             r for r in reminders
-            if not (r.get("label") == label and r.get("due_at") == due_at)
+            if not (_label_eq(r.get("label", ""), label) and r.get("due_at") == due_at)
         ]
         with open(PENDING_PATH, "w") as f:
             json.dump(reminders, f, indent=2)
@@ -160,6 +170,8 @@ def _write_dismissed_today(label: str) -> None:
                 dismissed = json.load(f)
         except Exception:
             pass
+    for k in [k for k in dismissed if _label_eq(k, label)]:
+        del dismissed[k]
     dismissed[label] = today
     try:
         with open(DISMISSED_PATH, "w") as f:
@@ -174,9 +186,11 @@ def _clear_dismissed_for_label(label: str) -> None:
     try:
         with open(DISMISSED_PATH) as f:
             dismissed = json.load(f)
-        if label not in dismissed:
+        matches = [k for k in dismissed if _label_eq(k, label)]
+        if not matches:
             return
-        del dismissed[label]
+        for k in matches:
+            del dismissed[k]
         with open(DISMISSED_PATH, "w") as f:
             json.dump(dismissed, f, indent=2)
     except Exception:
@@ -191,11 +205,11 @@ def mark_done(label: str) -> None:
         with open(PENDING_PATH) as f:
             reminders = json.load(f)
         already_done = any(
-            r.get("label") == label and r.get("status") == "done"
+            _label_eq(r.get("label", ""), label) and r.get("status") == "done"
             for r in reminders
         )
         for r in reminders:
-            if r.get("label") == label:
+            if _label_eq(r.get("label", ""), label):
                 r["status"] = "done"
         with open(PENDING_PATH, "w") as f:
             json.dump(reminders, f, indent=2)
@@ -214,7 +228,7 @@ def mark_dismissed(label: str) -> None:
         with open(PENDING_PATH) as f:
             reminders = json.load(f)
         for r in reminders:
-            if r.get("label") == label:
+            if _label_eq(r.get("label", ""), label):
                 r["status"] = "dismissed"
         with open(PENDING_PATH, "w") as f:
             json.dump(reminders, f, indent=2)
@@ -231,7 +245,7 @@ def mark_pending(label: str) -> None:
         with open(PENDING_PATH) as f:
             reminders = json.load(f)
         for r in reminders:
-            if r.get("label") == label:
+            if _label_eq(r.get("label", ""), label):
                 r["status"] = "pending"
                 r.pop("next_fire_at", None)
         with open(PENDING_PATH, "w") as f:
@@ -248,7 +262,10 @@ def is_dismissed_today(label: str) -> bool:
         with open(DISMISSED_PATH) as f:
             dismissed = json.load(f)
         today = datetime.now().strftime("%Y-%m-%d")
-        return dismissed.get(label) == today
+        return any(
+            _label_eq(k, label) and v == today
+            for k, v in dismissed.items()
+        )
     except Exception:
         return False
 
@@ -260,7 +277,7 @@ def remove_all_for_label(label: str) -> None:
     try:
         with open(PENDING_PATH) as f:
             reminders = json.load(f)
-        reminders = [r for r in reminders if r.get("label") != label]
+        reminders = [r for r in reminders if not _label_eq(r.get("label", ""), label)]
         with open(PENDING_PATH, "w") as f:
             json.dump(reminders, f, indent=2)
     except Exception:
@@ -281,7 +298,7 @@ def snooze_for_hours(label: str, hours: int) -> None:
             reminders = json.load(f)
         target = (datetime.now() + timedelta(hours=hours)).isoformat(timespec="seconds")
         for r in reminders:
-            if r.get("label") == label:
+            if _label_eq(r.get("label", ""), label):
                 r["status"] = "pending"
                 r["next_fire_at"] = target
         with open(PENDING_PATH, "w") as f:

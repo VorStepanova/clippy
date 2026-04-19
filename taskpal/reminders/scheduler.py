@@ -237,7 +237,7 @@ def _generate_nudge(label: str, context: str) -> str:
     except Exception:
         return plain
 
-    if not reply or reply == "-":
+    if not reply or reply.strip("-–—− \t") == "":
         return plain
     return f"⏰ {label} — {reply}"
 

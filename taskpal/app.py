@@ -56,12 +56,14 @@ class TaskPalApp(rumps.App):
             self._activity_label(),
             callback=self._toggle_activity
         )
+        self._activity_info_item = rumps.MenuItem(self._activity_info_label())
         self.menu = [
             "💬 Open Chat",
             rumps.separator,
             self._history_item,
             self._retention_item,
             self._activity_item,
+            self._activity_info_item,
             rumps.separator,
             "🗑️ Clear pending",
             rumps.separator,
@@ -236,12 +238,19 @@ class TaskPalApp(rumps.App):
     def _activity_label(self) -> str:
         enabled = self._config.get("activity_share_enabled", True)
         check = "✓ " if enabled else "   "
-        return f"{check}Share activity with Claude"
+        return f"{check}Context-aware mode"
+
+    def _activity_info_label(self) -> str:
+        enabled = self._config.get("activity_share_enabled", True)
+        if enabled:
+            return "   ↪ Sends app + idle time to Claude"
+        return "   ↪ Only your messages are sent"
 
     def _toggle_activity(self, _) -> None:
         enabled = self._config.get("activity_share_enabled", True)
         self._config.set("activity_share_enabled", not enabled)
         self._activity_item.title = self._activity_label()
+        self._activity_info_item.title = self._activity_info_label()
 
     @rumps.clicked("💬 Open Chat")
     def _open_chat(self, _) -> None:

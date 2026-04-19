@@ -243,7 +243,7 @@ def _consult_haiku(snap: dict | None, imminent: list[str]) -> str | None:
         text = response.content[0].text.strip()
     except Exception:
         return None
-    if not text or text == "-":
+    if not text or text.strip("-–—− \t") == "":
         return None
     return text
 
