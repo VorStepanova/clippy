@@ -183,12 +183,6 @@ def _clear_dismissed_for_label(label: str) -> None:
         pass
 
 
-def dismiss_today(label: str) -> None:
-    """Legacy: dismiss + remove from pending. Retained for any stale callers."""
-    _write_dismissed_today(label)
-    remove_all_for_label(label)
-
-
 def mark_done(label: str) -> None:
     """Flag all rows for label as done; log one completion per transition."""
     if not os.path.exists(PENDING_PATH):

@@ -76,8 +76,13 @@ def _load_agenda_items() -> list[dict]:
 def _get_response(text: str) -> str:
     agenda_items = _load_agenda_items()
     show_buttons = _is_agenda_query(text)
+    monitor_snap = _read_monitor_snapshot()
 
-    response = _client.send(text, agenda=agenda_items if agenda_items else None)
+    response = _client.send(
+        text,
+        agenda=agenda_items if agenda_items else None,
+        monitor=monitor_snap if monitor_snap else None,
+    )
 
     reminders = _extractor.extract_reminders(text)
     if reminders:

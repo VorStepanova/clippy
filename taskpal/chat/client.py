@@ -66,7 +66,12 @@ class TaskPalClient:
         self._started_at: str = datetime.now().isoformat(timespec="seconds")
         self._api_key: str | None = os.environ.get("ANTHROPIC_API_KEY")
 
-    def send(self, text: str, agenda: list[dict] | None = None) -> str:
+    def send(
+        self,
+        text: str,
+        agenda: list[dict] | None = None,
+        monitor: dict | None = None,
+    ) -> str:
         """Send a message to Claude and return the response text.
 
         Prepends the current timestamp to the user message before sending,
@@ -78,6 +83,8 @@ class TaskPalClient:
             text: The raw message the user typed in the chat UI.
             agenda: Optional list of pending reminder dicts to include
                     in the system prompt so Claude is agenda-aware.
+            monitor: Optional monitor snapshot dict (active_app, idle_secs,
+                    app_duration_secs) so Claude knows what the user is doing.
 
         Returns:
             The assistant's reply, or an error string if the call fails.
@@ -96,7 +103,7 @@ class TaskPalClient:
         self._history.append({"role": "user", "content": stamped})
 
         base_prompt = _DEMO_SYSTEM_PROMPT if is_demo() else _SYSTEM_PROMPT
-        system = base_prompt
+        context_blocks: list[str] = []
         if agenda:
             lines = ["\n\nToday's pending reminders (you are aware of these):"]
             for item in agenda:
@@ -109,7 +116,24 @@ class TaskPalClient:
                 except Exception:
                     due_fmt = due
                 lines.append(f"  - {emoji} {label} at {due_fmt}")
-            system = base_prompt + "\n".join(lines)
+            context_blocks.append("\n".join(lines))
+        if monitor:
+            active_app = (monitor.get("active_app") or "").strip() or "unknown"
+            try:
+                idle_min = int(monitor.get("idle_secs") or 0) // 60
+            except (TypeError, ValueError):
+                idle_min = 0
+            try:
+                app_dur_min = int(monitor.get("app_duration_secs") or 0) // 60
+            except (TypeError, ValueError):
+                app_dur_min = 0
+            mon_lines = ["\n\nRight now (from the activity monitor):"]
+            mon_lines.append(f"  - Active app: {active_app}")
+            if app_dur_min >= 1:
+                mon_lines.append(f"  - Time in that app: {app_dur_min} min")
+            mon_lines.append(f"  - User idle for: {idle_min} min")
+            context_blocks.append("\n".join(mon_lines))
+        system = base_prompt + "".join(context_blocks)
 
         try:
             response = self._client.messages.create(
