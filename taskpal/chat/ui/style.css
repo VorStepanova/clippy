@@ -338,10 +338,22 @@ body {
   font-size: 0.9em;
 }
 
+.bubble p {
+  margin: 0 0 6px 0;
+}
+
+.bubble p:last-child {
+  margin-bottom: 0;
+}
+
 .bubble ul {
-  margin: 4px 0;
+  margin: 0 0 6px 0;
   padding-left: 18px;
   list-style: disc;
+}
+
+.bubble ul:last-child {
+  margin-bottom: 0;
 }
 
 .bubble li {

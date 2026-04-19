@@ -22,11 +22,24 @@
     // Bullet lines: - text or * text at start of line
     escaped = escaped.replace(/^[\-\*]\s+(.+)$/gm, "<li>$1</li>");
     escaped = escaped.replace(/((?:<li>.*<\/li>\n?)+)/g, "<ul>$1</ul>");
-    // Collapse blank lines so paragraph breaks render as single line breaks,
-    // not double-height gaps.
-    escaped = escaped.replace(/\n{2,}/g, "\n");
-    escaped = escaped.replace(/\n/g, "<br>");
-    return escaped;
+    // Strip newlines inside and directly around <ul> so list margins aren't
+    // stacked with stray <br>s.
+    escaped = escaped.replace(/<ul>([\s\S]*?)<\/ul>/g, function (_, inner) {
+      return "<ul>" + inner.replace(/\n+/g, "") + "</ul>";
+    });
+    escaped = escaped.replace(/\n+<ul>/g, "<ul>");
+    escaped = escaped.replace(/<\/ul>\n+/g, "</ul>");
+    // Split on blank lines into blocks. Each block is either a bare <ul>…</ul>
+    // or a text paragraph. Paragraphs go in <p> so CSS can give them a
+    // consistent margin; intra-paragraph single \n becomes <br>.
+    var blocks = escaped.split(/\n{2,}/);
+    var html = blocks.map(function (block) {
+      if (!block) return "";
+      var trimmed = block.trim();
+      if (/^<ul>[\s\S]*<\/ul>$/.test(trimmed)) return trimmed;
+      return "<p>" + block.replace(/\n/g, "<br>") + "</p>";
+    }).join("");
+    return html;
   }
 
   function createReminderButtons(label) {
